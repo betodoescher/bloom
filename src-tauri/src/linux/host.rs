@@ -181,7 +181,18 @@ pub fn open_command(program: &str, args: &[&str]) {
 }
 
 pub fn control_center(page: &str) {
-    open_command("gnome-control-center", &[page]);
+    if page.is_empty() {
+        open_command("gnome-control-center", &[]);
+    } else {
+        open_command("gnome-control-center", &[page]);
+    }
+}
+
+pub fn open_task_manager() {
+    if Command::new("resources").spawn().is_ok() || Command::new("gnome-system-monitor").spawn().is_ok() {
+        return;
+    }
+    let _ = Command::new("x-terminal-emulator").args(["-e", "htop"]).spawn();
 }
 
 // --- windows ----------------------------------------------------------------
@@ -622,8 +633,105 @@ pub fn restore_gesture_backup() {
 }
 
 pub fn close_live_window(id: isize) -> bool {
-    let id = id.to_string();
-    shell_action("Close", &["t", &id]) || x11_client_message(id.parse().unwrap_or(0), b"_NET_CLOSE_WINDOW")
+    // The extension speaks mutter ids. An AT-SPI hash must never be forwarded
+    // there or to X11: the hash can collide with a real window, and Close
+    // still returns success when it does not find one.
+    if shell_tracks(id) {
+        let token = id.to_string();
+        return shell_action("Close", &["t", &token]);
+    }
+    let _hold = GESTURE.lock().unwrap_or_else(|err| err.into_inner());
+    restore_gesture_backup();
+    if let Some((app, title, index)) = atspi_target_for(id) {
+        return close_atspi_window(id, &app, &title, index);
+    }
+    x11_client_message(id as u32, b"_NET_CLOSE_WINDOW")
+}
+
+fn shell_tracks(id: isize) -> bool {
+    let Some(value) = shell_call("GetState", &[]) else {
+        return false;
+    };
+    let Some(json) = bus_text(&value) else {
+        return false;
+    };
+    parse_shell_windows(&json).is_some_and(|windows| windows.iter().any(|win| win.id == id))
+}
+
+fn atspi_target_for(id: isize) -> Option<AtspiTarget> {
+    if let Some(target) = ATSPI_REFS.lock().ok().and_then(|refs| refs.get(&id).cloned()) {
+        return Some(target);
+    }
+    atspi_windows()?;
+    ATSPI_REFS.lock().ok().and_then(|refs| refs.get(&id).cloned())
+}
+
+fn close_atspi_window(id: isize, app: &str, title: &str, index: u32) -> bool {
+    if atspi_window_close(app, title, index) {
+        return true;
+    }
+    if let Some(xid) = x11_id_for_title(title) {
+        if x11_client_message(xid, b"_NET_CLOSE_WINDOW") {
+            return true;
+        }
+    }
+    close_with_shortcut(id, app, title)
+}
+
+fn atspi_window_close(app: &str, title: &str, index: u32) -> bool {
+    let action = "window.close";
+    if !is_window_close_action(action) {
+        return false;
+    }
+    let response = atspi_exchange(&serde_json::json!({
+        "cmd": "close",
+        "app": app,
+        "title": title,
+        "index": index,
+        "action": action,
+    }));
+    response.and_then(|value| value.get("ok").and_then(|ok| ok.as_bool())) == Some(true)
+}
+
+fn close_with_shortcut(id: isize, app: &str, title: &str) -> bool {
+    let before = atspi_windows().unwrap_or_default();
+    let already = before.iter().any(|win| win.id == id && win.focused);
+    let others: Vec<isize> = before
+        .iter()
+        .filter(|win| win.focused && win.name != app)
+        .map(|win| win.id)
+        .collect();
+    if !already && !present_desktop_app(app, title) {
+        return false;
+    }
+    if !already {
+        // Mutter and AT-SPI notice the new focus a moment after the chord.
+        std::thread::sleep(Duration::from_millis(280));
+    }
+    let Some(after) = atspi_windows() else {
+        return false;
+    };
+    let raised = after.iter().any(|win| win.id == id && win.focused)
+        || after.iter().any(|win| win.name == app && win.title == title && win.focused);
+    let blocked = others.iter().any(|other| {
+        after
+            .iter()
+            .any(|win| win.id == *other && win.focused && win.name != app)
+    });
+    if !raised || blocked {
+        return false;
+    }
+    let chord = alt_f4_chord().map(str::to_string);
+    ydotool_key(&chord)
+}
+
+fn is_window_close_action(name: &str) -> bool {
+    name == "window.close"
+}
+
+fn alt_f4_chord() -> [&'static str; 4] {
+    // KEY_LEFTALT = 56, KEY_F4 = 62. Close is already bound to Alt+F4.
+    ["56:1", "62:1", "62:0", "56:0"]
 }
 
 pub fn toggle_overview() {
@@ -641,6 +749,14 @@ pub fn toggle_overview() {
     if !opened {
         let _ = set_overview_open(true);
     }
+}
+
+pub fn toggle_task_view() {
+    if shell_action("Overview", &[]) {
+        return;
+    }
+    // Task View is the window overview. Start uses Super+A for the app grid.
+    let _ = set_overview_open(!overview_is_open(&overview_property()));
 }
 
 fn overview_property() -> String {
@@ -757,6 +873,19 @@ fn x11_windows() -> Vec<LiveWindow> {
     .collect()
 }
 
+fn x11_id_for_title(title: &str) -> Option<u32> {
+    let title = title.trim();
+    if title.is_empty() {
+        return None;
+    }
+    let hits: Vec<u32> = x11_windows()
+        .into_iter()
+        .filter(|win| win.title == title)
+        .map(|win| win.id as u32)
+        .collect();
+    if hits.len() == 1 { Some(hits[0]) } else { None }
+}
+
 fn intern(conn: &x11rb::rust_connection::RustConnection, name: &[u8]) -> Option<u32> {
     use x11rb::protocol::xproto::ConnectionExt;
     conn.intern_atom(false, name).ok()?.reply().ok().map(|r| r.atom)
@@ -800,7 +929,7 @@ fn x11_client_message(window: u32, message: &[u8]) -> bool {
         sequence: 0,
         window,
         type_: kind,
-        data: ClientMessageData::from([1u32, 0, 0, 0, 0]),
+        data: ClientMessageData::from([0u32, 1, 0, 0, 0]),
     };
     conn.send_event(
         false,
@@ -2306,6 +2435,15 @@ mod tests {
         }];
         let found = pick_desktop(&apps, "spotify").unwrap();
         assert_eq!(found.id, "spotify_spotify.desktop");
+    }
+
+    #[test]
+    fn close_uses_the_gtk_window_action_or_alt_f4() {
+        assert!(is_window_close_action("window.close"));
+        assert!(!is_window_close_action("page.close"));
+        assert!(!is_window_close_action("win.close-current-page"));
+        assert!(!is_window_close_action("window.minimize"));
+        assert_eq!(alt_f4_chord(), ["56:1", "62:1", "62:0", "56:0"]);
     }
 
     #[test]

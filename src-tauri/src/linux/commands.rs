@@ -718,17 +718,16 @@ pub enum SystemAction {
 #[tauri::command]
 pub async fn open_system_action(action: SystemAction) -> Result<(), String> {
     match action {
-        SystemAction::TaskManager | SystemAction::ComputerManagement => {
-            host::open_command("gnome-system-monitor", &[])
-        }
+        SystemAction::TaskManager => host::open_task_manager(),
+        SystemAction::ComputerManagement => host::open_task_manager(),
         SystemAction::DiskManagement => host::open_command("gnome-disks", &[]),
-        SystemAction::DeviceManager | SystemAction::Settings | SystemAction::TaskbarSettings => {
-            host::control_center("")
-        }
+        SystemAction::DeviceManager => host::control_center("system"),
+        SystemAction::Settings => host::control_center(""),
+        SystemAction::TaskbarSettings => host::control_center("ubuntu"),
         SystemAction::InstalledApps => host::control_center("applications"),
         SystemAction::PowerOptions => host::control_center("power"),
         SystemAction::NetworkConnections => host::control_center("network"),
-        SystemAction::TaskView => host::toggle_overview(),
+        SystemAction::TaskView => host::toggle_task_view(),
     }
     Ok(())
 }

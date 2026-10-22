@@ -110,6 +110,46 @@ def do_list():
     reply({"ok": True, "windows": rows})
 
 
+def find_frame(app, title, index):
+    for acc, row in frames():
+        if row["app"] == app and row["title"] == title and row["index"] == index:
+            return acc
+    return None
+
+
+def action_names(acc):
+    try:
+        count = Atspi.Action.get_n_actions(acc)
+    except Exception:
+        return []
+    names = []
+    for i in range(count):
+        try:
+            names.append(Atspi.Action.get_action_name(acc, i) or "")
+        except Exception:
+            names.append("")
+    return names
+
+
+def do_close(app, title, index, action):
+    # Only the exact GTK window action. page.close and win.close-current-page
+    # close a tab, which is not what Close window asked for.
+    target = find_frame(app, title, index)
+    if target is None:
+        reply({"ok": False})
+        return
+    for i, name in enumerate(action_names(target)):
+        if name != action:
+            continue
+        try:
+            ok = bool(Atspi.Action.do_action(target, i))
+        except Exception:
+            ok = False
+        reply({"ok": ok})
+        return
+    reply({"ok": False})
+
+
 def do_toggle(app, title, index):
     target = None
     for acc, row in frames():
@@ -144,6 +184,13 @@ for line in sys.stdin:
         cmd = req.get("cmd")
         if cmd == "list":
             do_list()
+        elif cmd == "close":
+            do_close(
+                req.get("app", ""),
+                req.get("title", ""),
+                int(req.get("index", 0)),
+                req.get("action", "window.close"),
+            )
         elif cmd == "toggle":
             do_toggle(req.get("app", ""), req.get("title", ""), int(req.get("index", 0)))
         else:
