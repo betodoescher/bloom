@@ -440,7 +440,9 @@ name = "bloom"
 version = "3.10.0"
 dependencies = [
  "base64 0.22.1",
+ "gtk",
  "image",
+ "libc",
  "rustfft",
  "serde",
  "serde_json",
@@ -459,6 +461,7 @@ dependencies = [
  "windows-collections",
  "windows-core 0.61.2",
  "wmi",
+ "x11rb",
  "zip",
 ]
 

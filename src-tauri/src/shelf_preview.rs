@@ -6,7 +6,6 @@ use std::io::Read;
 use std::path::Path;
 
 use base64::Engine;
-use windows::core::HSTRING;
 
 /// What a shelf tile shows for a file or folder.
 #[derive(Clone, serde::Serialize)]
@@ -128,7 +127,11 @@ fn image_thumbnail(p: &Path) -> Option<String> {
 
 /// Page one of a PDF, rendered by Windows' built-in PDF engine. Fails for
 /// password-protected files, which then show the PDF icon.
+/// ponytail: Linux has no in-box PDF renderer here; the tile falls back to the
+/// type icon. Add poppler when a shelf PDF preview is required.
+#[cfg(windows)]
 fn pdf_thumbnail(path: &str) -> Option<String> {
+    use windows::core::HSTRING;
     use windows::Data::Pdf::{PdfDocument, PdfPageRenderOptions};
     use windows::Storage::StorageFile;
     use windows::Storage::Streams::{DataReader, InMemoryRandomAccessStream};
@@ -256,6 +259,12 @@ fn snippet(text: &str) -> Option<String> {
     (!trimmed.is_empty()).then_some(trimmed)
 }
 
+#[cfg(not(windows))]
+fn pdf_thumbnail(_path: &str) -> Option<String> {
+    None
+}
+
+#[cfg(windows)]
 fn com_init() {
     unsafe {
         let _ = windows::Win32::System::Com::CoInitializeEx(
@@ -267,7 +276,9 @@ fn com_init() {
 
 /// Explorer's thumbnail for a file or folder. Asks for thumbnails only, so a
 /// file Windows can't preview returns nothing rather than its generic icon.
+#[cfg(windows)]
 fn shell_thumbnail(path: &str) -> Option<String> {
+    use windows::core::HSTRING;
     use windows::Win32::Foundation::SIZE;
     use windows::Win32::UI::Shell::{
         IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF, SIIGBF_BIGGERSIZEOK,
@@ -291,6 +302,11 @@ fn shell_thumbnail(path: &str) -> Option<String> {
         let _ = windows::Win32::Graphics::Gdi::DeleteObject(hbitmap.into());
         result
     }
+}
+
+#[cfg(not(windows))]
+fn shell_thumbnail(_path: &str) -> Option<String> {
+    None
 }
 
 #[cfg(test)]

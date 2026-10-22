@@ -55,6 +55,12 @@ pub static SINGLE_INSTANCE_MUTEX_HANDLE: OnceLock<isize> = OnceLock::new();
 pub static SINGLE_INSTANCE_EVENT_HANDLE: OnceLock<isize> = OnceLock::new();
 
 pub fn close_single_instance_handles() {
+    #[cfg(not(windows))]
+    {
+        return;
+    }
+    #[cfg(windows)]
+    {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::Foundation::HANDLE;
     if let Some(&h) = SINGLE_INSTANCE_MUTEX_HANDLE.get() {
@@ -70,6 +76,7 @@ pub fn close_single_instance_handles() {
                 let _ = CloseHandle(HANDLE(h as *mut _));
             }
         }
+    }
     }
 }
 

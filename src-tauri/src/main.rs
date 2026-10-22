@@ -1,32 +1,55 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(windows)]
 mod battery;
+#[cfg(windows)]
 mod bluetooth;
+#[cfg(windows)]
 mod commands;
 mod diagnostics;
+#[cfg(windows)]
 mod dock_extras;
+#[cfg(windows)]
 mod services;
+#[cfg(target_os = "linux")]
+mod linux;
+mod settings_file;
+#[cfg(windows)]
 mod shelf;
 mod shelf_preview;
 mod state;
+#[cfg(windows)]
 mod tray;
 mod types;
 mod updater;
+#[cfg(windows)]
 mod utils;
+#[cfg(windows)]
 mod wifi;
+#[cfg(windows)]
 mod window_region;
 
+#[cfg(windows)]
 use std::sync::atomic::Ordering;
+#[cfg(windows)]
 use tauri::Manager;
+#[cfg(windows)]
 use windows::core::BOOL;
+#[cfg(windows)]
 use windows::Win32::System::Console::SetConsoleCtrlHandler;
+#[cfg(windows)]
 use windows::Win32::System::Console::{CTRL_BREAK_EVENT, CTRL_CLOSE_EVENT, CTRL_C_EVENT};
 
+#[cfg(windows)]
 use crate::commands::*;
+#[cfg(windows)]
 use crate::services::*;
+#[cfg(windows)]
 use crate::state::*;
+#[cfg(windows)]
 use crate::utils::*;
 
+#[cfg(windows)]
 unsafe extern "system" fn ctrl_handler(ctrl_type: u32) -> BOOL {
     if ctrl_type == CTRL_C_EVENT || ctrl_type == CTRL_BREAK_EVENT || ctrl_type == CTRL_CLOSE_EVENT {
         set_taskbar_visibility(true, true);
@@ -37,6 +60,14 @@ unsafe extern "system" fn ctrl_handler(ctrl_type: u32) -> BOOL {
 }
 
 fn main() {
+    #[cfg(windows)]
+    windows_main();
+    #[cfg(target_os = "linux")]
+    linux::main();
+}
+
+#[cfg(windows)]
+fn windows_main() {
     let mut args = std::env::args_os();
     if args.nth(1).as_deref() == Some(std::ffi::OsStr::new("--taskbar-watchdog")) {
         if let (Some(pid), Some(marker)) = (args.next(), args.next()) {
