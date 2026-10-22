@@ -79,6 +79,15 @@ pub struct TrayApp {
     pub window_handles: Vec<isize>,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct TrayMenuItem {
+    pub id: i32,
+    pub label: String,
+    pub separator: bool,
+    pub enabled: bool,
+    pub children: Vec<TrayMenuItem>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct LiveWindow {
     pub id: isize,
@@ -2258,11 +2267,186 @@ pub fn tray_apps() -> Vec<TrayApp> {
 }
 
 pub fn tray_activate(id: &str, menu: bool) -> Result<(), String> {
-    let (service, path) = id.split_once('@').unwrap_or((id, "/StatusNotifierItem"));
+    let (service, path) = tray_endpoint(id);
     let method = if menu { "ContextMenu" } else { "Activate" };
     run_ok("busctl", &[
         "--user", "call", service, path, "org.kde.StatusNotifierItem", method, "ii", "0", "0",
     ])
+}
+
+pub fn tray_open(id: &str) -> Result<(), String> {
+    let (service, path) = tray_endpoint(id);
+    if tray_activate(id, false).is_ok() {
+        return Ok(());
+    }
+    let title = sni_text(service, path, "Title").unwrap_or_default();
+    let ident = sni_text(service, path, "Id").unwrap_or_default();
+    open_named_app(&title, &ident)
+}
+
+pub fn tray_menu(id: &str) -> Vec<TrayMenuItem> {
+    let (service, path) = tray_endpoint(id);
+    let Some(menu) = sni_text(service, path, "Menu").filter(|menu| menu.starts_with('/')) else {
+        return Vec::new();
+    };
+    let _ = run_ok("busctl", &[
+        "--user", "call", service, &menu, "com.canonical.dbusmenu", "AboutToShow", "i", "0",
+    ]);
+    let Some(value) = busctl(false, &[
+        "call",
+        service,
+        &menu,
+        "com.canonical.dbusmenu",
+        "GetLayout",
+        "iias",
+        "--",
+        "0",
+        "-1",
+        "5",
+        "label",
+        "type",
+        "enabled",
+        "visible",
+        "children-display",
+    ]) else {
+        return Vec::new();
+    };
+    parse_tray_menu(&value)
+}
+
+pub fn tray_menu_activate(id: &str, item: i32) -> Result<(), String> {
+    let (service, path) = tray_endpoint(id);
+    let menu = sni_text(service, path, "Menu")
+        .filter(|menu| menu.starts_with('/'))
+        .ok_or_else(|| "This app has no menu".to_string())?;
+    let item_id = item.to_string();
+    run_ok("busctl", &[
+        "--user",
+        "call",
+        service,
+        &menu,
+        "com.canonical.dbusmenu",
+        "Event",
+        "isvu",
+        "--",
+        &item_id,
+        "clicked",
+        "i",
+        "0",
+        "0",
+    ])
+}
+
+fn tray_endpoint(id: &str) -> (&str, &str) {
+    id.split_once('@').unwrap_or((id, "/StatusNotifierItem"))
+}
+
+fn sni_text(service: &str, path: &str, prop: &str) -> Option<String> {
+    let value = busctl(false, &[
+        "get-property",
+        service,
+        path,
+        "org.kde.StatusNotifierItem",
+        prop,
+    ])?;
+    bus_text(&value).filter(|text| !text.is_empty())
+}
+
+fn open_named_app(title: &str, ident: &str) -> Result<(), String> {
+    let needles = tray_needles(title, ident);
+    if needles.is_empty() {
+        return Err("This tray item has no app name".into());
+    }
+    let matches = |name: &str| {
+        let name = name.to_ascii_lowercase();
+        needles.iter().any(|needle| name == *needle || name.contains(needle.as_str()))
+    };
+    if let Some(app) = apps_from_windows(&live_windows()).into_iter().find(|app| matches(&app.name)) {
+        if let Some(hwnd) = app.hwnd {
+            if raise_window(hwnd) {
+                return Ok(());
+            }
+        }
+    }
+    if let Some(app) = installed().into_iter().find(|app| matches(&app.name) || matches(&app.id)) {
+        return launch(&app.path);
+    }
+    Err("Could not open the app".into())
+}
+
+fn tray_needles(title: &str, ident: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for raw in [title, ident] {
+        let text = raw.trim().to_ascii_lowercase();
+        if text.chars().count() < 2 || out.contains(&text) {
+            continue;
+        }
+        out.push(text);
+    }
+    out
+}
+
+fn parse_tray_menu(value: &Value) -> Vec<TrayMenuItem> {
+    let Some(layout) = value.get("data").and_then(|data| data.as_array()).and_then(|data| data.get(1)) else {
+        return Vec::new();
+    };
+    menu_node_parts(layout)
+        .map(|(_, _, children)| children.iter().filter_map(menu_item).collect())
+        .unwrap_or_default()
+}
+
+fn menu_node_parts(value: &Value) -> Option<(i64, &serde_json::Map<String, Value>, &Vec<Value>)> {
+    let arr = value.as_array().or_else(|| value.get("data")?.as_array())?;
+    let id = arr.first()?.as_i64()?;
+    let props = arr.get(1)?.as_object()?;
+    let children = arr.get(2)?.as_array()?;
+    Some((id, props, children))
+}
+
+fn menu_item(value: &Value) -> Option<TrayMenuItem> {
+    let (id, props, children) = menu_node_parts(value)?;
+    if field(props, "visible").and_then(|v| v.as_bool()) == Some(false) {
+        return None;
+    }
+    let separator = field(props, "type").and_then(|v| v.as_str()) == Some("separator");
+    if separator {
+        return Some(TrayMenuItem {
+            id: id as i32,
+            label: String::new(),
+            separator: true,
+            enabled: false,
+            children: Vec::new(),
+        });
+    }
+    let label = mnemonic_label(field(props, "label").and_then(|v| v.as_str()).unwrap_or(""));
+    let enabled = field(props, "enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+    let kids: Vec<TrayMenuItem> = children.iter().filter_map(menu_item).collect();
+    if label.is_empty() && kids.is_empty() {
+        return None;
+    }
+    Some(TrayMenuItem {
+        id: id as i32,
+        label,
+        separator: false,
+        enabled,
+        children: kids,
+    })
+}
+
+fn mnemonic_label(text: &str) -> String {
+    let mut out = String::new();
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '_' {
+            if chars.peek() == Some(&'_') {
+                chars.next();
+                out.push('_');
+            }
+            continue;
+        }
+        out.push(ch);
+    }
+    out
 }
 
 pub fn user_dirs() -> Vec<(&'static str, &'static str, PathBuf)> {
@@ -2435,6 +2619,29 @@ mod tests {
         }];
         let found = pick_desktop(&apps, "spotify").unwrap();
         assert_eq!(found.id, "spotify_spotify.desktop");
+    }
+
+    #[test]
+    fn tray_menu_keeps_labels_submenus_and_skips_hidden_rows() {
+        let raw = serde_json::json!({
+            "type": "u(ia{sv}av)",
+            "data": [1, [0, {}, [
+                {"type":"(ia{sv}av)","data":[2, {"label":{"type":"s","data":"_Sair"}, "enabled":{"type":"b","data":true}, "visible":{"type":"b","data":true}}, []]},
+                {"type":"(ia{sv}av)","data":[3, {"type":{"type":"s","data":"separator"}, "visible":{"type":"b","data":true}}, []]},
+                {"type":"(ia{sv}av)","data":[4, {"label":{"type":"s","data":"Escondido"}, "visible":{"type":"b","data":false}}, []]},
+                {"type":"(ia{sv}av)","data":[5, {"label":{"type":"s","data":"A__B"}, "children-display":{"type":"s","data":"submenu"}}, [
+                    {"type":"(ia{sv}av)","data":[6, {"label":{"type":"s","data":"Filho"}}, []]}
+                ]]}
+            ]]]
+        });
+        let items = parse_tray_menu(&raw);
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].label, "Sair");
+        assert!(items[0].enabled && !items[0].separator);
+        assert!(items[1].separator);
+        assert_eq!(items[2].label, "A_B");
+        assert_eq!(items[2].children[0].label, "Filho");
+        assert_eq!(items[2].children[0].id, 6);
     }
 
     #[test]

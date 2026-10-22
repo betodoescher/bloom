@@ -101,6 +101,8 @@ pub fn main() {
             commands::get_tray_apps,
             commands::show_tray_context_menu,
             commands::activate_tray_icon,
+            commands::get_tray_menu,
+            commands::activate_tray_menu_item,
             commands::open_system_action,
             commands::get_app_icon,
             commands::get_installed_apps,

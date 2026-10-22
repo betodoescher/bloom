@@ -2025,6 +2025,35 @@ img {
 	box-shadow: 0 0 4px var(--bloom-border, rgba(255, 255, 255, 0.15));
 }
 
+.cc-audio-toggle {
+	flex: none;
+	width: 16px;
+	height: 16px;
+	padding: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: none;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--bloom-text-muted, rgba(255, 255, 255, 0.55));
+	cursor: pointer;
+}
+
+.cc-audio-toggle svg {
+	transition: transform 0.15s ease;
+}
+
+.cc-audio-toggle.on svg {
+	transform: rotate(180deg);
+}
+
+.cc-audio-toggle:hover,
+.cc-audio-toggle.on {
+	background: rgba(255, 255, 255, 0.12);
+	color: var(--bloom-text, white);
+}
+
 .cc-classic-percentage {
 	width: 28px;
 	text-align: right;

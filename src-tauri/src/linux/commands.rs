@@ -734,7 +734,17 @@ pub async fn open_system_action(action: SystemAction) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn activate_tray_icon(tray_id: String) -> Result<(), String> {
-    host::tray_activate(&tray_id, false)
+    host::tray_open(&tray_id)
+}
+
+#[tauri::command]
+pub async fn get_tray_menu(tray_id: String) -> Vec<host::TrayMenuItem> {
+    host::tray_menu(&tray_id)
+}
+
+#[tauri::command]
+pub async fn activate_tray_menu_item(tray_id: String, item_id: i32) -> Result<(), String> {
+    host::tray_menu_activate(&tray_id, item_id)
 }
 
 #[tauri::command]

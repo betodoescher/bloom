@@ -51,6 +51,7 @@ import {
 	Megaphone,
 	Type,
 	X,
+	ChevronDown,
 	ChevronLeft,
 	ChevronRight,
 	Inbox,
@@ -1250,6 +1251,7 @@ function App() {
 	// Bloom mode state: 'music', 'calendar', 'command-center', 'announcement', 'shelf', or 'status'
 	const [bloomMode, setBloomMode] = useState<BloomMode>("status");
 	const [audioDevices, setAudioDevices] = useState<AudioDevices | null>(null);
+	const [audioDevicesOpen, setAudioDevicesOpen] = useState(false);
 
 	// Shelf: files and selected text stashed in the notch via drag-and-drop.
 	// Files are stored as plain paths (references, never copies). Session-scoped
@@ -2792,7 +2794,9 @@ function App() {
 		}
 		if (bloomMode === "command-center") {
 			const hasDevices =
-				!!audioDevices && (audioDevices.outputs.length > 0 || audioDevices.inputs.length > 0);
+				audioDevicesOpen &&
+				!!audioDevices &&
+				(audioDevices.outputs.length > 0 || audioDevices.inputs.length > 0);
 			return isOpen ? (hasDevices ? 380 : 230) : 36;
 		}
 		if (bloomMode === "wifi" || bloomMode === "bluetooth" || bloomMode === "tray") return 300;
@@ -3782,9 +3786,28 @@ function App() {
 													<span className="cc-classic-percentage">
 														{Math.round(displayVolume * 100)}%
 													</span>
+													{audioDevices &&
+														(audioDevices.outputs.length > 0 || audioDevices.inputs.length > 0) && (
+															<button
+																type="button"
+																className={`cc-audio-toggle${audioDevicesOpen ? " on" : ""}`}
+																aria-expanded={audioDevicesOpen}
+																aria-label={audioDevicesOpen ? "Hide audio devices" : "Show audio devices"}
+																title={audioDevicesOpen ? "Hide audio devices" : "Audio devices"}
+																onPointerDown={(e) => e.stopPropagation()}
+																onClick={(e) => {
+																	e.stopPropagation();
+																	setAudioDevicesOpen((open) => !open);
+																}}
+															>
+																<ChevronDown size={12} strokeWidth={2.4} />
+															</button>
+														)}
 												</div>
 
-												{audioDevices && (audioDevices.outputs.length > 0 || audioDevices.inputs.length > 0) && (
+												{audioDevicesOpen &&
+													audioDevices &&
+													(audioDevices.outputs.length > 0 || audioDevices.inputs.length > 0) && (
 													<div
 														className="cc-audio-devices"
 														onPointerDown={(e) => e.stopPropagation()}
