@@ -1444,14 +1444,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn dock_setting_defaults_on_but_rejects_explicit_invalid_values() {
-        use super::dock_setting_enabled;
-
-        assert!(dock_setting_enabled(None));
-        assert!(dock_setting_enabled(Some(&serde_json::json!("true"))));
-        assert!(!dock_setting_enabled(Some(&serde_json::json!("false"))));
-        assert!(!dock_setting_enabled(Some(&serde_json::json!("invalid"))));
-        assert!(!dock_setting_enabled(Some(&serde_json::json!(true))));
-    }
 }

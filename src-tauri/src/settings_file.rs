@@ -129,3 +129,17 @@ pub fn dock_enabled() -> bool {
             .unwrap_or(false)
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::dock_setting_enabled;
+
+    #[test]
+    fn dock_setting_defaults_on_but_rejects_explicit_invalid_values() {
+        assert!(dock_setting_enabled(None));
+        assert!(dock_setting_enabled(Some(&serde_json::json!("true"))));
+        assert!(!dock_setting_enabled(Some(&serde_json::json!("false"))));
+        assert!(!dock_setting_enabled(Some(&serde_json::json!("invalid"))));
+        assert!(!dock_setting_enabled(Some(&serde_json::json!(true))));
+    }
+}
