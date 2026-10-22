@@ -38,6 +38,7 @@ import { EdgeSurface } from "./components/EdgeSurface";
 import { ShelfTypeIcon } from "./components/ShelfTypeIcon";
 import { WifiPanel } from "./components/WifiPanel";
 import { BluetoothPanel } from "./components/BluetoothPanel";
+import { TrayPanel } from "./components/TrayPanel";
 import {
 	Cpu,
 	MemoryStick,
@@ -437,7 +438,19 @@ type BloomMode =
 	| "status"
 	| "shelf"
 	| "wifi"
-	| "bluetooth";
+	| "bluetooth"
+	| "tray";
+
+interface AudioEndpoint {
+	id: string;
+	name: string;
+	selected: boolean;
+}
+
+interface AudioDevices {
+	outputs: AudioEndpoint[];
+	inputs: AudioEndpoint[];
+}
 
 // The shelf is a short-lived stash: one row, newest first, oldest evicted.
 const SHELF_MAX_ITEMS = 10;
@@ -1236,6 +1249,7 @@ function App() {
 
 	// Bloom mode state: 'music', 'calendar', 'command-center', 'announcement', 'shelf', or 'status'
 	const [bloomMode, setBloomMode] = useState<BloomMode>("status");
+	const [audioDevices, setAudioDevices] = useState<AudioDevices | null>(null);
 
 	// Shelf: files and selected text stashed in the notch via drag-and-drop.
 	// Files are stored as plain paths (references, never copies). Session-scoped
@@ -2176,6 +2190,28 @@ function App() {
 		};
 	}, [refreshWifiStatus]);
 
+	useEffect(() => {
+		const unlisten = listen("show-tray-panel", () => setBloomMode("tray"));
+		return () => {
+			unlisten.then((f) => f());
+		};
+	}, []);
+
+	useEffect(() => {
+		if (bloomMode !== "command-center") return;
+		let cancelled = false;
+		invoke<AudioDevices>("get_audio_devices")
+			.then((devices) => {
+				if (!cancelled) setAudioDevices(devices);
+			})
+			.catch(() => {
+				if (!cancelled) setAudioDevices(null);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [bloomMode]);
+
 	// Load bluetooth/volume/brightness state on mount
 	useEffect(() => {
 		invoke<boolean>("get_bluetooth_state")
@@ -2717,7 +2753,7 @@ function App() {
 		if (isCalendarMode) return 480;
 		if (bloomMode === "shelf") return 380;
 		if (bloomMode === "command-center" && isOpen) return 350;
-		if (bloomMode === "wifi" || bloomMode === "bluetooth") return 350;
+		if (bloomMode === "wifi" || bloomMode === "bluetooth" || bloomMode === "tray") return 350;
 		if (showMusicOnStatusHover) {
 			return 170 + (settingsVisualizerEnabled ? 30 : 0);
 		}
@@ -2754,8 +2790,12 @@ function App() {
 			if (shelfItems.length === 0) return 130;
 			return shelfOverflowing ? 190 : 176;
 		}
-		if (bloomMode === "command-center") return isOpen ? 230 : 36;
-		if (bloomMode === "wifi" || bloomMode === "bluetooth") return 300;
+		if (bloomMode === "command-center") {
+			const hasDevices =
+				!!audioDevices && (audioDevices.outputs.length > 0 || audioDevices.inputs.length > 0);
+			return isOpen ? (hasDevices ? 380 : 230) : 36;
+		}
+		if (bloomMode === "wifi" || bloomMode === "bluetooth" || bloomMode === "tray") return 300;
 		if (bloomMode === "status") return 36;
 		if (isMusicMode && isOpen) {
 			const hasProgressBar = (mediaInfo.duration_ms ?? 0) > 0;
@@ -3504,6 +3544,20 @@ function App() {
 									)}
 								</AnimatePresence>
 
+								<AnimatePresence>
+									{bloomMode === "tray" && (
+										<motion.div
+											key="tray-view"
+											initial={{ opacity: 0 }}
+											animate={{ opacity: 1 }}
+											exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
+											transition={{ type: "spring", stiffness: 400, damping: 30 }}
+										>
+											<TrayPanel onBack={() => setBloomMode("command-center")} />
+										</motion.div>
+									)}
+								</AnimatePresence>
+
 								{/* Command Center Panel */}
 								<AnimatePresence>
 									{bloomMode === "command-center" && (
@@ -3729,6 +3783,57 @@ function App() {
 														{Math.round(displayVolume * 100)}%
 													</span>
 												</div>
+
+												{audioDevices && (audioDevices.outputs.length > 0 || audioDevices.inputs.length > 0) && (
+													<div
+														className="cc-audio-devices"
+														onPointerDown={(e) => e.stopPropagation()}
+														onClick={(e) => e.stopPropagation()}
+													>
+														{audioDevices.outputs.length > 0 && (
+															<div className="cc-audio-col">
+																<span>Output</span>
+																<div className="cc-audio-list">
+																	{audioDevices.outputs.map((device) => (
+																		<button
+																			key={device.id}
+																			className={device.selected ? "on" : ""}
+																			onClick={() => {
+																				invoke("set_audio_device", { id: device.id })
+																					.then(() => invoke<AudioDevices>("get_audio_devices"))
+																					.then(setAudioDevices)
+																					.catch(() => {});
+																			}}
+																		>
+																			{device.name}
+																		</button>
+																	))}
+																</div>
+															</div>
+														)}
+														{audioDevices.inputs.length > 0 && (
+															<div className="cc-audio-col">
+																<span>Input</span>
+																<div className="cc-audio-list">
+																	{audioDevices.inputs.map((device) => (
+																		<button
+																			key={device.id}
+																			className={device.selected ? "on" : ""}
+																			onClick={() => {
+																				invoke("set_audio_device", { id: device.id })
+																					.then(() => invoke<AudioDevices>("get_audio_devices"))
+																					.then(setAudioDevices)
+																					.catch(() => {});
+																			}}
+																		>
+																			{device.name}
+																		</button>
+																	))}
+																</div>
+															</div>
+														)}
+													</div>
+												)}
 
 												{/* Brightness Slider */}
 												<div className="cc-classic-slider-row">

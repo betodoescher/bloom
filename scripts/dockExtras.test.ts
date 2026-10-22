@@ -42,6 +42,7 @@ describe("dock extras hidden drives", () => {
 			removable: false
 		});
 		expect(driveLetter(extra("drive:D"))).toBe("D");
+		expect(driveLetter(extra("drive:/media/usb"))).toBe("/media/usb");
 		expect(driveLetter(extra("folder:downloads"))).toBeNull();
 	});
 });

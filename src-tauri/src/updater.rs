@@ -220,9 +220,12 @@ async fn install_inner(app: &AppHandle) -> Result<(), String> {
             // The installer exits the process without going through
             // restore_taskbar_and_exit, so do the same teardown here.
             crate::state::SHUTTING_DOWN.store(true, Ordering::Relaxed);
-            crate::commands::release_appbars(&hook_handle);
-            crate::utils::set_taskbar_visibility(true, true);
-            crate::services::set_native_osd_suppressed(false);
+            #[cfg(windows)]
+            {
+                crate::commands::release_appbars(&hook_handle);
+                crate::utils::set_taskbar_visibility(true, true);
+                crate::services::set_native_osd_suppressed(false);
+            }
             let _ = hook_handle.emit(
                 "auto-update-status",
                 serde_json::json!({ "status": "installing" }),
@@ -297,7 +300,7 @@ async fn install_inner(app: &AppHandle) -> Result<(), String> {
 /// auto-installs only when the user enabled it and the release has aged.
 pub async fn run_startup_check(app: AppHandle) {
     let auto_update =
-        crate::utils::get_setting_str(&app, "bloom-auto-update").as_deref() == Some("true");
+        crate::settings_file::get_setting_str(&app, "bloom-auto-update").as_deref() == Some("true");
 
     if auto_update {
         let _ = app.emit(

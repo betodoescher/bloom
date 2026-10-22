@@ -154,7 +154,15 @@ bun install
 bun run tauri dev
 ```
 
-You'll need [Rust](https://rustup.rs/) and [Bun](https://bun.sh/). That's it.
+You'll need [Rust](https://rustup.rs/) and [Bun](https://bun.sh/). That's it on Windows.
+
+On Linux (GNOME, including Ubuntu 26.04) install the WebKit packages first, then the same two commands:
+
+```bash
+sudo apt install build-essential pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-layer-shell0
+```
+
+Bloom leaves the Ubuntu dock in place. Hide that dock in Settings if you want Bloom to be the only bar. On GNOME Wayland the app runs through XWayland so the island can be positioned; set `BLOOM_X11=0` to stay on native Wayland. `BLOOM_LAYER_SHELL=0` skips gtk-layer-shell on wlroots, KDE and COSMIC.
 
 ---
 

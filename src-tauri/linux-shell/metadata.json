@@ -1,0 +1,8 @@
+{
+  "uuid": "bloom@sehaz.space",
+  "name": "Bloom",
+  "description": "Lists, focuses and previews windows for the Bloom dock on GNOME.",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "version": 1,
+  "url": "https://github.com/SehajveerSingh2005/bloom"
+}

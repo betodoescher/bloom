@@ -7,11 +7,27 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const MAX_LOG_BYTES: u64 = 1024 * 1024;
 static LOG_PATH: OnceLock<Mutex<PathBuf>> = OnceLock::new();
 
+fn log_directory() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        std::env::var_os("LOCALAPPDATA")
+            .map(|dir| PathBuf::from(dir).join("com.sehaz.bloom"))
+    }
+    #[cfg(not(windows))]
+    {
+        let base = std::env::var_os("XDG_STATE_HOME")
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share"))
+            })?;
+        Some(base.join("bloom"))
+    }
+}
+
 pub fn initialize() {
-    let Some(local_data) = std::env::var_os("LOCALAPPDATA") else {
+    let Some(directory) = log_directory() else {
         return;
     };
-    let directory = PathBuf::from(local_data).join("com.sehaz.bloom");
     if fs::create_dir_all(&directory).is_err() {
         return;
     }
