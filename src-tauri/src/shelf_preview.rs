@@ -278,6 +278,7 @@ fn com_init() {
 /// file Windows can't preview returns nothing rather than its generic icon.
 #[cfg(windows)]
 fn shell_thumbnail(path: &str) -> Option<String> {
+    use windows::core::HSTRING;
     use windows::Win32::Foundation::SIZE;
     use windows::Win32::UI::Shell::{
         IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF, SIIGBF_BIGGERSIZEOK,
